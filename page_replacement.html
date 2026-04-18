@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Page Replacement Simulator | OS Lab</title>
+  <meta name="description" content="Simulate and visualize FIFO, LRU, and Optimal page replacement algorithms step-by-step with interactive frame visualization and page fault analysis." />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0a0e1a;
+      --surface: #111827;
+      --card: #1a2235;
+      --card-hover: #1e293b;
+      --border: #1e2d45;
+      --accent: #6366f1;
+      --accent-glow: rgba(99, 102, 241, 0.35);
+      --accent2: #22d3ee;
+      --accent3: #a78bfa;
+      --green: #34d399;
+      --red: #f87171;
+      --yellow: #fbbf24;
+      --text: #f1f5f9;
+      --text-muted: #7c8fac;
+      --hit-bg: #0d2d20;
+      --hit-border: #34d399;
+      --fault-bg: #2d1010;
+      --fault-border: #f87171;
+      --radius: 14px;
+      --radius-sm: 8px;
+      --fifo-color: #6366f1;
+      --lru-color: #22d3ee;
+      --opt-color: #a78bfa;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Background orbs ── */
+    .bg-orbs {
+      position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden;
+    }
+    .orb {
+      position: absolute; border-radius: 50%; filter: blur(110px); opacity: .18; animation: float 12s ease-in-out infinite;
+    }
+    .orb1 { width: 500px; height: 500px; background: #6366f1; top: -150px; left: -150px; animation-delay: 0s; }
+    .orb2 { width: 400px; height: 400px; background: #22d3ee; bottom: -100px; right: -100px; animation-delay: 4s; }
+    .orb3 { width: 300px; height: 300px; background: #a78bfa; top: 40%; left: 60%; animation-delay: 8s; }
+    @keyframes float {
+      0%,100%{transform:translateY(0) scale(1)} 50%{transform:translateY(-30px) scale(1.05)}
+    }
+
+    /* ── Layout ── */
+    .app { position: relative; z-index: 1; }
+
+    header {
+      text-align: center; padding: 3rem 1rem 1.5rem;
+    }
+    .header-badge {
+      display: inline-flex; align-items: center; gap: .5rem;
+      background: rgba(99,102,241,.18); border: 1px solid rgba(99,102,241,.4);
+      border-radius: 999px; padding: .35rem 1rem; font-size: .78rem;
+      color: var(--accent3); margin-bottom: 1.2rem; letter-spacing: .06em; text-transform: uppercase;
+    }
+    header h1 {
+      font-size: clamp(2rem, 5vw, 3.2rem); font-weight: 800; line-height: 1.15;
+      background: linear-gradient(135deg, #fff 30%, var(--accent3));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    header p {
+      color: var(--text-muted); font-size: 1.05rem; margin-top: .75rem; max-width: 560px; margin-inline: auto;
+    }
+
+    main { max-width: 1200px; margin: 0 auto; padding: 0 1.5rem 4rem; }
+
+    /* ── Input card ── */
+    .input-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 2rem 2rem 1.5rem;
+      margin-bottom: 2.5rem;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 4px 40px rgba(0,0,0,.35);
+    }
+    .input-card h2 {
+      font-size: 1.05rem; font-weight: 600; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: .08em; margin-bottom: 1.4rem;
+    }
+    .input-grid { display: grid; grid-template-columns: 1fr auto auto; gap: 1rem; align-items: end; }
+    @media(max-width:700px){.input-grid{grid-template-columns:1fr;}}
+
+    .field label {
+      display: block; font-size: .82rem; color: var(--text-muted);
+      margin-bottom: .45rem; font-weight: 500; letter-spacing: .04em;
+    }
+    .field input {
+      width: 100%; background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: .75rem 1rem; color: var(--text);
+      font-size: .95rem; font-family: 'JetBrains Mono', monospace;
+      outline: none; transition: border-color .2s, box-shadow .2s;
+    }
+    .field input:focus {
+      border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+    .field input::placeholder { color: #3a4a5f; }
+
+    .btn {
+      display: inline-flex; align-items: center; gap: .55rem;
+      font-family: 'Inter', sans-serif; font-size: .92rem; font-weight: 600;
+      border: none; border-radius: var(--radius-sm); cursor: pointer;
+      transition: transform .15s, box-shadow .2s, filter .2s;
+    }
+    .btn:active { transform: scale(.97); }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent3));
+      color: #fff; padding: .78rem 1.8rem;
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+    .btn-primary:hover { filter: brightness(1.12); box-shadow: 0 0 32px var(--accent-glow); }
+    .btn-secondary {
+      background: var(--surface); color: var(--text-muted);
+      border: 1px solid var(--border); padding: .78rem 1.3rem;
+    }
+    .btn-secondary:hover { color: var(--text); border-color: var(--accent); }
+
+    /* ── Algorithm selector ── */
+    .algo-tabs {
+      display: flex; gap: .75rem; margin-bottom: 2rem; flex-wrap: wrap;
+    }
+    .algo-tab {
+      flex: 1; min-width: 140px;
+      background: var(--card); border: 2px solid var(--border);
+      border-radius: var(--radius); padding: 1.1rem 1.2rem;
+      cursor: pointer; transition: all .22s; position: relative; overflow: hidden;
+      text-align: center;
+    }
+    .algo-tab .tab-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      display: inline-block; margin-right: .45rem; vertical-align: middle;
+    }
+    .algo-tab span { font-weight: 600; font-size: .95rem; }
+    .algo-tab .tab-faults {
+      display: block; font-size: .78rem; color: var(--text-muted); margin-top: .35rem;
+    }
+    .algo-tab.active-fifo  { border-color: var(--fifo-color); box-shadow: 0 0 18px rgba(99,102,241,.3); background: rgba(99,102,241,.1); }
+    .algo-tab.active-lru   { border-color: var(--lru-color);  box-shadow: 0 0 18px rgba(34,211,238,.3); background: rgba(34,211,238,.1); }
+    .algo-tab.active-opt   { border-color: var(--opt-color);  box-shadow: 0 0 18px rgba(167,139,250,.3); background: rgba(167,139,250,.1); }
+
+    /* ── Summary pills ── */
+    .summary-bar {
+      display: flex; gap: 1rem; margin-bottom: 2rem; flex-wrap: wrap;
+    }
+    .summary-pill {
+      flex: 1; min-width: 180px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 1.2rem 1.4rem;
+      display: flex; flex-direction: column; gap: .3rem;
+    }
+    .summary-pill .pill-label { font-size: .78rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .07em; }
+    .summary-pill .pill-value { font-size: 2rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+    .summary-pill .pill-sub { font-size: .8rem; color: var(--text-muted); }
+    .pill-fifo .pill-value { color: var(--fifo-color); }
+    .pill-lru  .pill-value { color: var(--lru-color); }
+    .pill-opt  .pill-value { color: var(--opt-color); }
+    .pill-best .pill-value { color: var(--green); }
+
+    /* ── Output area ── */
+    .output-hidden { display: none; }
+
+    /* ── Visualization table ── */
+    .viz-wrapper {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
+      box-shadow: 0 4px 40px rgba(0,0,0,.3);
+    }
+    .viz-header {
+      padding: 1.2rem 1.5rem; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .75rem;
+    }
+    .viz-header h3 { font-size: .95rem; font-weight: 700; display: flex; align-items: center; gap: .6rem; }
+    .viz-legend { display: flex; gap: 1rem; font-size: .78rem; color: var(--text-muted); }
+    .legend-item { display: flex; align-items: center; gap: .4rem; }
+    .legend-dot { width: 8px; height: 8px; border-radius: 2px; }
+
+    .table-scroll { overflow-x: auto; }
+    table {
+      width: 100%; border-collapse: collapse; font-size: .85rem;
+    }
+    thead th {
+      background: var(--surface); padding: .65rem .9rem; text-align: center;
+      font-weight: 600; font-size: .78rem; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: .06em; white-space: nowrap;
+      border-bottom: 1px solid var(--border);
+    }
+    thead th:first-child { text-align: left; border-right: 1px solid var(--border); }
+    tbody tr { border-bottom: 1px solid rgba(30,45,69,.6); transition: background .15s; }
+    tbody tr:hover { background: var(--card-hover); }
+    tbody td {
+      padding: .6rem .9rem; text-align: center; white-space: nowrap;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    tbody td:first-child {
+      text-align: left; font-family: 'Inter',sans-serif;
+      font-weight: 500; border-right: 1px solid var(--border); color: var(--text-muted);
+      font-size: .82rem;
+    }
+
+    .ref-cell {
+      font-weight: 700; font-size: 1rem; position: relative;
+    }
+    .frame-cell {
+      background: rgba(26,34,53,.8); border-radius: 6px;
+      padding: .35rem .7rem; display: inline-block;
+      font-weight: 500; min-width: 2rem;
+    }
+    .frame-cell.new-entry {
+      background: rgba(99,102,241,.25); color: var(--accent3);
+      border: 1px solid rgba(99,102,241,.5);
+      animation: popIn .3s ease;
+    }
+    @keyframes popIn {
+      0%{transform:scale(.7);opacity:0} 70%{transform:scale(1.08)} 100%{transform:scale(1);opacity:1}
+    }
+    .frame-cell.empty { color: var(--border); }
+
+    .status-hit {
+      background: var(--hit-bg); color: var(--green);
+      border: 1px solid var(--hit-border); border-radius: 6px;
+      padding: .2rem .55rem; font-size: .76rem; font-weight: 600;
+      display: inline-block; letter-spacing: .03em;
+    }
+    .status-fault {
+      background: var(--fault-bg); color: var(--red);
+      border: 1px solid var(--fault-border); border-radius: 6px;
+      padding: .2rem .55rem; font-size: .76rem; font-weight: 600;
+      display: inline-block; letter-spacing: .03em;
+    }
+
+    .col-ref { background: rgba(20,28,48,.6); }
+    .col-status { min-width: 80px; }
+
+    /* ── Footer ── */
+    .fault-row td {
+      padding-top: .5rem; padding-bottom: .7rem;
+    }
+    .total-faults-bar {
+      padding: 1.2rem 1.5rem;
+      border-top: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem;
+    }
+    .total-faults-bar span { font-size: .88rem; color: var(--text-muted); }
+    .total-faults-bar strong { font-family: 'JetBrains Mono', monospace; font-size: 1.2rem; }
+
+    /* ── Comparison chart ── */
+    .compare-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 1.5rem; margin-top: 2rem;
+    }
+    .compare-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 1.4rem; }
+    .bar-chart { display: flex; flex-direction: column; gap: 1rem; }
+    .bar-row { display: flex; align-items: center; gap: 1rem; }
+    .bar-label { width: 60px; font-size: .82rem; font-weight: 600; flex-shrink: 0; }
+    .bar-track { flex: 1; background: var(--surface); border-radius: 999px; height: 28px; overflow: hidden; position: relative; }
+    .bar-fill {
+      height: 100%; border-radius: 999px;
+      display: flex; align-items: center; justify-content: flex-end; padding-right: 10px;
+      font-size: .8rem; font-weight: 700; color: #fff;
+      transition: width 1s cubic-bezier(.23,1,.32,1);
+    }
+    .bar-fifo { background: linear-gradient(90deg, #4f52c7, var(--fifo-color)); }
+    .bar-lru  { background: linear-gradient(90deg, #178fa0, var(--lru-color)); }
+    .bar-opt  { background: linear-gradient(90deg, #7c5fcb, var(--opt-color)); }
+    .bar-count { width: 40px; font-family: 'JetBrains Mono', monospace; font-size: .88rem; font-weight: 700; }
+
+    /* ── Reference string display ── */
+    .ref-string-display {
+      display: flex; flex-wrap: wrap; gap: .4rem;
+      padding: .9rem 1rem; background: var(--surface);
+      border-radius: var(--radius-sm); border: 1px solid var(--border);
+    }
+    .ref-chip {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 6px; padding: .25rem .65rem;
+      font-family: 'JetBrains Mono', monospace; font-size: .88rem;
+      font-weight: 600; color: var(--accent3);
+      transition: background .2s;
+    }
+    .ref-chip.highlighted {
+      background: rgba(99,102,241,.3); border-color: var(--accent);
+      color: #fff; transform: scale(1.1);
+    }
+
+    /* scroll hint */
+    .scroll-hint {
+      font-size: .75rem; color: var(--text-muted);
+      text-align: right; padding: .4rem 1rem;
+    }
+
+    /* algo section */
+    .algo-section { display: none; }
+    .algo-section.active { display: block; }
+
+    /* Step legend */
+    .step-info {
+      background: var(--surface); border-radius: var(--radius-sm);
+      padding: .75rem 1rem; font-size: .82rem; color: var(--text-muted);
+      border-left: 3px solid var(--accent); margin-bottom: 1.25rem;
+    }
+
+    /* ── Error box ── */
+    .error-box {
+      background: var(--fault-bg); border: 1px solid var(--fault-border);
+      border-radius: var(--radius-sm); padding: .9rem 1.2rem;
+      font-size: .88rem; color: var(--red); display: none;
+    }
+
+    /* ── Responsive ── */
+    @media(max-width: 600px){
+      header { padding: 2rem 1rem 1rem; }
+      .input-card { padding: 1.3rem; }
+      .summary-pill .pill-value { font-size: 1.5rem; }
+    }
+
+    /* Animate in */
+    .animate-in {
+      animation: slideUp .4s ease both;
+    }
+    @keyframes slideUp {
+      from{opacity:0;transform:translateY(24px)} to{opacity:1;transform:translateY(0)}
+    }
+
+    .section-title {
+      font-size: .82rem; font-weight: 600; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: .08em; margin-bottom: .9rem;
+    }
+  </style>
+</head>
+<body>
+<div class="bg-orbs">
+  <div class="orb orb1"></div>
+  <div class="orb orb2"></div>
+  <div class="orb orb3"></div>
+</div>
+
+<div class="app">
+  <header>
+    <div class="header-badge">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.5"/><circle cx="6" cy="6" r="2" fill="currentColor"/></svg>
+      Operating Systems Lab
+    </div>
+    <h1>Page Replacement<br>Algorithms</h1>
+    <p>Simulate and compare FIFO, LRU, and Optimal page replacement algorithms with step-by-step frame visualization.</p>
+  </header>
+
+  <main>
+    <!-- Input Card -->
+    <div class="input-card animate-in">
+      <h2>⚙️ Configuration</h2>
+      <div class="input-grid">
+        <div class="field" style="grid-column:1/-1">
+          <label>Page Reference String</label>
+          <input type="text" id="refInput" placeholder="e.g. 7 0 1 2 0 3 0 4 2 3 0 3 2 1 2 0 1 7 0 1" value="7 0 1 2 0 3 0 4 2 3 0 3 2 1 2 0 1 7 0 1" />
+        </div>
+        <div class="field">
+          <label>Number of Frames</label>
+          <input type="number" id="framesInput" placeholder="e.g. 3" value="3" min="1" max="10" />
+        </div>
+        <button class="btn btn-primary" onclick="runSimulation()" id="runBtn">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <polygon points="3,2 13,8 3,14" fill="currentColor"/>
+          </svg>
+          Simulate
+        </button>
+        <button class="btn btn-secondary" onclick="resetAll()">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+            <path d="M2 7.5A5.5 5.5 0 1 1 7.5 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <path d="M2 4.5V7.5H5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          Reset
+        </button>
+      </div>
+      <div class="error-box" id="errorBox"></div>
+    </div>
+
+    <!-- Output section (hidden until simulation runs) -->
+    <div id="outputArea" class="output-hidden">
+
+      <!-- Reference String Chips -->
+      <div style="margin-bottom:1.8rem">
+        <div class="section-title">Reference String</div>
+        <div class="ref-string-display" id="refChips"></div>
+      </div>
+
+      <!-- Summary pills -->
+      <div class="section-title">Page Fault Summary</div>
+      <div class="summary-bar" id="summaryBar">
+        <div class="summary-pill pill-fifo">
+          <span class="pill-label">FIFO</span>
+          <span class="pill-value" id="fifo-total">—</span>
+          <span class="pill-sub">page faults</span>
+        </div>
+        <div class="summary-pill pill-lru">
+          <span class="pill-label">LRU</span>
+          <span class="pill-value" id="lru-total">—</span>
+          <span class="pill-sub">page faults</span>
+        </div>
+        <div class="summary-pill pill-opt">
+          <span class="pill-label">Optimal</span>
+          <span class="pill-value" id="opt-total">—</span>
+          <span class="pill-sub">page faults</span>
+        </div>
+        <div class="summary-pill pill-best">
+          <span class="pill-label">Best Algorithm</span>
+          <span class="pill-value" id="best-algo">—</span>
+          <span class="pill-sub" id="best-sub">fewest faults</span>
+        </div>
+      </div>
+
+      <!-- Algo tabs -->
+      <div class="section-title">Step-by-Step Visualization</div>
+      <div class="algo-tabs">
+        <div class="algo-tab active-fifo" id="tab-fifo" onclick="switchTab('fifo')">
+          <span class="tab-dot" style="background:var(--fifo-color)"></span>
+          <span>FIFO</span>
+          <span class="tab-faults" id="tab-fifo-faults"></span>
+        </div>
+        <div class="algo-tab" id="tab-lru" onclick="switchTab('lru')">
+          <span class="tab-dot" style="background:var(--lru-color)"></span>
+          <span>LRU</span>
+          <span class="tab-faults" id="tab-lru-faults"></span>
+        </div>
+        <div class="algo-tab" id="tab-opt" onclick="switchTab('opt')">
+          <span class="tab-dot" style="background:var(--opt-color)"></span>
+          <span>Optimal</span>
+          <span class="tab-faults" id="tab-opt-faults"></span>
+        </div>
+      </div>
+
+      <!-- FIFO section -->
+      <div class="algo-section active" id="section-fifo">
+        <div class="step-info">
+          <strong>FIFO (First-In First-Out):</strong> Replaces the page that has been in memory the longest. The oldest page is always the victim, regardless of how frequently or recently it was used.
+        </div>
+        <div class="viz-wrapper animate-in" id="fifo-viz"></div>
+      </div>
+
+      <!-- LRU section -->
+      <div class="algo-section" id="section-lru">
+        <div class="step-info">
+          <strong>LRU (Least Recently Used):</strong> Replaces the page that has not been used for the longest period of time. Tracks the recency of page accesses.
+        </div>
+        <div class="viz-wrapper animate-in" id="lru-viz"></div>
+      </div>
+
+      <!-- Optimal section -->
+      <div class="algo-section" id="section-opt">
+        <div class="step-info">
+          <strong>Optimal (Bélády's Algorithm):</strong> Replaces the page that will not be used for the longest time in the future. Theoretical benchmark — requires future knowledge.
+        </div>
+        <div class="viz-wrapper animate-in" id="opt-viz"></div>
+      </div>
+
+      <!-- Bar chart comparison -->
+      <div class="compare-card animate-in">
+        <h3>📊 Comparative Analysis — Page Faults</h3>
+        <div class="bar-chart" id="barChart"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+// Algorithm Implementations
+// ─────────────────────────────────────────────
+
+function fifoAlgo(refs, frameCount) {
+  let frames = [];
+  let queue = []; // insertion order tracker
+  const steps = [];
+
+  for (let i = 0; i < refs.length; i++) {
+    const page = refs[i];
+    const framesBefore = [...frames];
+    let fault = false;
+    let replaced = null;
+
+    if (!frames.includes(page)) {
+      fault = true;
+      if (frames.length < frameCount) {
+        frames.push(page);
+        queue.push(page);
+      } else {
+        replaced = queue.shift();
+        const idx = frames.indexOf(replaced);
+        frames[idx] = page;
+        queue.push(page);
+      }
+    }
+
+    steps.push({
+      ref: page,
+      frames: [...frames],
+      fault,
+      replaced,
+      newEntry: fault ? page : null,
+    });
+  }
+
+  return steps;
+}
+
+function lruAlgo(refs, frameCount) {
+  let frames = [];
+  let used = []; // tracks last use time per page
+  const steps = [];
+
+  for (let i = 0; i < refs.length; i++) {
+    const page = refs[i];
+    let fault = false;
+    let replaced = null;
+
+    if (frames.includes(page)) {
+      // update recency
+      used = used.filter(p => p !== page);
+      used.push(page);
+    } else {
+      fault = true;
+      if (frames.length < frameCount) {
+        frames.push(page);
+        used.push(page);
+      } else {
+        // least recently used = first in 'used'
+        replaced = used.shift();
+        const idx = frames.indexOf(replaced);
+        frames[idx] = page;
+        used.push(page);
+      }
+    }
+
+    steps.push({
+      ref: page,
+      frames: [...frames],
+      fault,
+      replaced,
+      newEntry: fault ? page : null,
+    });
+  }
+
+  return steps;
+}
+
+function optimalAlgo(refs, frameCount) {
+  let frames = [];
+  const steps = [];
+
+  for (let i = 0; i < refs.length; i++) {
+    const page = refs[i];
+    let fault = false;
+    let replaced = null;
+
+    if (frames.includes(page)) {
+      // Hit – no replacement
+    } else {
+      fault = true;
+      if (frames.length < frameCount) {
+        frames.push(page);
+      } else {
+        // Find the page used furthest in the future (or never)
+        let farthest = -1;
+        let victim = frames[0];
+
+        for (const fp of frames) {
+          const nextUse = refs.indexOf(fp, i + 1);
+          if (nextUse === -1) {
+            victim = fp;
+            break;
+          }
+          if (nextUse > farthest) {
+            farthest = nextUse;
+            victim = fp;
+          }
+        }
+        replaced = victim;
+        const idx = frames.indexOf(victim);
+        frames[idx] = page;
+      }
+    }
+
+    steps.push({
+      ref: page,
+      frames: [...frames],
+      fault,
+      replaced,
+      newEntry: fault ? page : null,
+    });
+  }
+
+  return steps;
+}
+
+// ─────────────────────────────────────────────
+// Render visualization table
+// ─────────────────────────────────────────────
+
+function renderTable(steps, frameCount, algoName, color) {
+  const faults = steps.filter(s => s.fault).length;
+  const hits = steps.length - faults;
+
+  let html = `
+    <div class="viz-header">
+      <h3 style="color:${color}">${algoName}</h3>
+      <div class="viz-legend">
+        <span class="legend-item"><span class="legend-dot" style="background:var(--green)"></span>Hit</span>
+        <span class="legend-item"><span class="legend-dot" style="background:var(--red)"></span>Fault</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#4f52c7"></span>New/Replaced</span>
+      </div>
+    </div>
+    <div class="scroll-hint">← scroll to see all steps →</div>
+    <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Row</th>`;
+
+  steps.forEach((s, i) => {
+    html += `<th class="col-ref" style="color:${color}">${s.ref}</th>`;
+  });
+
+  html += `</tr></thead><tbody>`;
+
+  // Frame rows
+  for (let f = 0; f < frameCount; f++) {
+    html += `<tr><td>Frame ${f + 1}</td>`;
+    steps.forEach((s, i) => {
+      const val = s.frames[f];
+      if (val === undefined || val === null) {
+        html += `<td><span class="frame-cell empty">—</span></td>`;
+      } else {
+        const isNew = s.newEntry === val && s.fault && s.frames[f] === val;
+        html += `<td><span class="frame-cell${isNew ? ' new-entry' : ''}">${val}</span></td>`;
+      }
+    });
+    html += `</tr>`;
+  }
+
+  // Status row
+  html += `<tr><td>Status</td>`;
+  steps.forEach(s => {
+    if (s.fault) {
+      html += `<td><span class="status-fault">FAULT</span></td>`;
+    } else {
+      html += `<td><span class="status-hit">HIT</span></td>`;
+    }
+  });
+  html += `</tr>`;
+
+  html += `</tbody></table></div>
+    <div class="total-faults-bar">
+      <span>Total Steps: <strong>${steps.length}</strong></span>
+      <span>Hits: <strong style="color:var(--green)">${hits}</strong></span>
+      <span>Page Faults: <strong style="color:var(--red)">${faults}</strong></span>
+      <span>Hit Rate: <strong style="color:${color}">${((hits/steps.length)*100).toFixed(1)}%</strong></span>
+    </div>`;
+
+  return html;
+}
+
+// ─────────────────────────────────────────────
+// Tab switching
+// ─────────────────────────────────────────────
+let currentTab = 'fifo';
+
+function switchTab(name) {
+  ['fifo','lru','opt'].forEach(a => {
+    document.getElementById(`section-${a}`).classList.remove('active');
+    const tab = document.getElementById(`tab-${a}`);
+    tab.className = 'algo-tab';
+  });
+  document.getElementById(`section-${name}`).classList.add('active');
+  document.getElementById(`tab-${name}`).classList.add(`active-${name}`);
+  currentTab = name;
+}
+
+// ─────────────────────────────────────────────
+// Bar chart
+// ─────────────────────────────────────────────
+function renderBarChart(fifoF, lruF, optF) {
+  const max = Math.max(fifoF, lruF, optF, 1);
+  const chart = document.getElementById('barChart');
+  chart.innerHTML = [
+    { label: 'FIFO', count: fifoF, cls: 'bar-fifo', color: 'var(--fifo-color)' },
+    { label: 'LRU',  count: lruF,  cls: 'bar-lru',  color: 'var(--lru-color)' },
+    { label: 'OPT',  count: optF,  cls: 'bar-opt',  color: 'var(--opt-color)' },
+  ].map(b => `
+    <div class="bar-row">
+      <span class="bar-label" style="color:${b.color}">${b.label}</span>
+      <div class="bar-track">
+        <div class="bar-fill ${b.cls}" style="width:${(b.count/max*100).toFixed(1)}%">
+          ${b.count > 0 ? b.count : ''}
+        </div>
+      </div>
+      <span class="bar-count" style="color:${b.color}">${b.count}</span>
+    </div>`).join('');
+}
+
+// ─────────────────────────────────────────────
+// Main simulation runner
+// ─────────────────────────────────────────────
+function runSimulation() {
+  const rawRef = document.getElementById('refInput').value.trim();
+  const framesVal = parseInt(document.getElementById('framesInput').value);
+  const errorBox = document.getElementById('errorBox');
+  errorBox.style.display = 'none';
+
+  if (!rawRef) {
+    showError('Please enter a page reference string.');
+    return;
+  }
+
+  const refs = rawRef.split(/[\s,]+/).filter(Boolean);
+  if (refs.length === 0) {
+    showError('Reference string is empty. Use space or comma separated values.');
+    return;
+  }
+  if (isNaN(framesVal) || framesVal < 1 || framesVal > 20) {
+    showError('Number of frames must be between 1 and 20.');
+    return;
+  }
+
+  // Run algorithms
+  const fifoSteps = fifoAlgo(refs, framesVal);
+  const lruSteps  = lruAlgo(refs, framesVal);
+  const optSteps  = optimalAlgo(refs, framesVal);
+
+  const fifoF = fifoSteps.filter(s => s.fault).length;
+  const lruF  = lruSteps.filter(s => s.fault).length;
+  const optF  = optSteps.filter(s => s.fault).length;
+
+  // Reference chips
+  const chips = document.getElementById('refChips');
+  chips.innerHTML = refs.map((r, i) =>
+    `<span class="ref-chip" id="chip-${i}">${r}</span>`
+  ).join('');
+
+  // Summary pills
+  document.getElementById('fifo-total').textContent = fifoF;
+  document.getElementById('lru-total').textContent  = lruF;
+  document.getElementById('opt-total').textContent  = optF;
+
+  const minF = Math.min(fifoF, lruF, optF);
+  const bestAlgos = [];
+  if (fifoF === minF) bestAlgos.push('FIFO');
+  if (lruF  === minF) bestAlgos.push('LRU');
+  if (optF  === minF) bestAlgos.push('OPT');
+  document.getElementById('best-algo').textContent = bestAlgos.join(' / ');
+  document.getElementById('best-sub').textContent  = `${minF} faults`;
+
+  // Tab faults
+  document.getElementById('tab-fifo-faults').textContent = `${fifoF} faults`;
+  document.getElementById('tab-lru-faults').textContent  = `${lruF} faults`;
+  document.getElementById('tab-opt-faults').textContent  = `${optF} faults`;
+
+  // Render tables
+  document.getElementById('fifo-viz').innerHTML = renderTable(fifoSteps, framesVal, 'FIFO — First In, First Out', 'var(--fifo-color)');
+  document.getElementById('lru-viz').innerHTML  = renderTable(lruSteps,  framesVal, 'LRU — Least Recently Used',  'var(--lru-color)');
+  document.getElementById('opt-viz').innerHTML  = renderTable(optSteps,  framesVal, 'Optimal — Bélády\'s Algorithm', 'var(--opt-color)');
+
+  // Bar chart
+  renderBarChart(fifoF, lruF, optF);
+
+  // Reveal output
+  const output = document.getElementById('outputArea');
+  output.classList.remove('output-hidden');
+  output.style.animation = 'none';
+  requestAnimationFrame(() => {
+    output.style.animation = '';
+    output.classList.add('animate-in');
+  });
+
+  // Scroll to output smoothly
+  setTimeout(() => output.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+
+  // Switch to active FIFO tab by default
+  switchTab('fifo');
+}
+
+function showError(msg) {
+  const box = document.getElementById('errorBox');
+  box.textContent = '⚠ ' + msg;
+  box.style.display = 'block';
+}
+
+function resetAll() {
+  document.getElementById('refInput').value = '';
+  document.getElementById('framesInput').value = '';
+  document.getElementById('outputArea').classList.add('output-hidden');
+  document.getElementById('errorBox').style.display = 'none';
+}
+
+// Allow Enter to run simulation
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('refInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') runSimulation();
+  });
+  document.getElementById('framesInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') runSimulation();
+  });
+});
+</script>
+</body>
+</html>
